@@ -7,30 +7,46 @@
 
 using namespace cv;
 
+Mat source;
+float GxKernel[3][3] = {
+	-1,0,1,
+	-2,0,2,
+	-1,0,1 };
+float GyKernel[3][3] = {
+	1,2,1,
+	0,0,0,
+	-1,-2,-1 };
+
+void CallBackForDeriviation(int val, void *userData);
+
 void toGrayScale(Mat& img);
-void GaussianBlur(Mat& img);
+void GaussianBlur(Mat& img, float deriviation);
 void Canny(Mat &img);
-int hysteresis(Mat &img, Mat &theta, int row, int col);
+int hysteresisR(Mat &img, Mat &theta, int row, int col);
+int hysteresisL(Mat &img, Mat &theta, int row, int col);
+
 int main() {
-	Mat img = imread("../../MyPic.jpg", CV_LOAD_IMAGE_COLOR);
-	if (img.empty()) {
+	source = imread("../../MyPic.jpg", CV_LOAD_IMAGE_COLOR);
+	
+	if (source.empty()) {
 		std::cout << "Cannot load image." << std::endl;
 		return -1;
 	}
 
 	namedWindow("Origin", WINDOW_AUTOSIZE);
-	imshow("Origin", img);
+	imshow("Origin", source);
 
-	toGrayScale(img);
+	namedWindow("Canny", WINDOW_AUTOSIZE);
+	int deriviation = 8408;
+	createTrackbar("Deriviation", "Canny", &deriviation, 10000, CallBackForDeriviation, NULL);
 
-	namedWindow("GrayScale", WINDOW_AUTOSIZE);
-	imshow("GrayScale", img);
-
-	GaussianBlur(img);
-
-	namedWindow("BlurImage", WINDOW_AUTOSIZE);
-	imshow("BlurImage", img);
+	toGrayScale(source);
+	Mat img(source);
+	GaussianBlur(img, deriviation);
 	Canny(img);
+
+	imshow("Canny", img);
+	
 	waitKey(0);
 }
 
@@ -44,13 +60,26 @@ void toGrayScale(Mat& img) {
 	img = grayScale;
 }
 
-void GaussianBlur(Mat& img) {
+void CallBackForDeriviation(int val, void *userData) {
+	Mat img(source);
+	if (val < 1) {
+		val = 1;
+	}
 
+	GaussianBlur(img, val);
+	Canny(img);
+
+	imshow("Canny", img);
+}
+
+void GaussianBlur(Mat& img, float deriviation) {
+
+	float sigma = ((float)deriviation / 10000.0);
 	float kernel[7][7];
 	float sum = 0;
 
 	/*                      calculating kernel                          */
-	float sigma2 = pow(0.84089642, 2);
+	float sigma2 = pow(sigma, 2);
 	float prefix = 1 / (2 * Pi * sigma2);
 	
 	for (int i = -3; i < 4; ++i) {
@@ -63,11 +92,11 @@ void GaussianBlur(Mat& img) {
 		//std::cout << std::endl;
 	}
 	
-	/*
+	
 	for (int i = 0; i < 7; ++i)
 		for (int j = 0; j < 7; ++j)
 			kernel[i][j] /= sum;
-	*/
+	
 
 	/*                   Gaussian Blur                   */
 	Mat blurImage(Mat::zeros(img.rows,img.cols, CV_8U));
@@ -93,14 +122,7 @@ void GaussianBlur(Mat& img) {
 }
 
 void Canny(Mat &img) {
-	float GxKernel[3][3] = {
-							-1,0,1,
-							-2,0,2,
-							-1,0,1 };
-	float GyKernel[3][3] = {
-							1,2,1,
-							0,0,0,
-							-1,-2,-1 };
+	
 	float Gx = 0, Gy = 0;
 	Mat G(Mat::zeros(img.rows, img.cols, CV_8U));
 	Mat Theta(Mat::zeros(img.rows, img.cols, CV_32F));
@@ -189,65 +211,90 @@ void Canny(Mat &img) {
 			}
 		}
 	}
-	namedWindow("test1", WINDOW_AUTOSIZE);
-	imshow("test1", G);
+	
 	for (int row = 0; row < img.rows; ++row) {
 		for (int col = 0; col < img.cols; ++col) {
-			//std::cout << row << " " << col <<" " << Theta.col(6).row(4) <<std::endl;
-			hysteresis(G, Theta, row, col);
+			if (gPtr[row*img.cols + col] >= 60) {
+				hysteresisR(G, Theta, row, col);
+				hysteresisL(G, Theta, row, col);
+			}
 		}
 	}
-	
-	Mat edge(img);
-	Canny(img, edge, 20, 80, 3);
-	namedWindow("test1", WINDOW_AUTOSIZE);
-	imshow("test1", edge);
-	
-	namedWindow("test", WINDOW_AUTOSIZE);
-	imshow("test", G);
+	for (int row = 0; row < img.rows; ++row) {
+		for (int col = 0; col < img.cols; ++col) {
+			if (gPtr[row*img.cols + col] <= 60) {
+				gPtr[row*img.cols + col] = 0;
+			}
+		}
+	}
+	img = G;
 }
 
-int hysteresis(Mat &img, Mat &theta, int row, int col) {
+int hysteresisR(Mat &img, Mat &theta, int row, int col) {
 	uint8_t *ptr = img.data;
 	float *tPtr = (float *)theta.data;
-	
 	if (!(row >= 0 && row < img.rows && col < img.cols && col >= 0))
 		return -1;
 	if (ptr[row*img.cols + col] < 20) {
 		ptr[row*img.cols + col] = 0;
 		return -1;
 	}
-	else if (ptr[row*img.cols + col] >= 20 && ptr[row*img.cols + col] < 80){
+	else {
+		ptr[row*img.cols + col] = 255;
 		int angle = tPtr[row*img.cols + col];
 		int retValue = -1;
 		switch (angle)
 		{
 		case 0:
-			retValue = hysteresis(img, theta, row + 1, col);
+			retValue = hysteresisR(img, theta, row + 1, col);
 			break;
 		case 45:
-			retValue = hysteresis(img, theta, row+1, col+1);
+			retValue = hysteresisR(img, theta, row + 1, col + 1);
 			break;
 		case 90:
-			retValue = hysteresis(img, theta, row, col + 1);
+			retValue = hysteresisR(img, theta, row, col + 1);
 			break;
 		case 135:
-			retValue = hysteresis(img, theta, row+1, col-1);
+			retValue = hysteresisR(img, theta, row + 1, col - 1);
 			break;
 		default:
 			break;
 		}
-		if (retValue == 1) {
-			ptr[row*img.cols + col] = 255;
-			return 1;
-		}
-		else {
-			ptr[row*img.cols + col] = 0;
-			return -1;
-		}
+		return 1;
 	}
-	else {
+}
+
+int hysteresisL(Mat &img, Mat &theta, int row, int col) {
+	uint8_t *ptr = img.data;
+	float *tPtr = (float *)theta.data;
+
+	if (!(row >= 0 && row < img.rows && col < img.cols && col >= 0))
+		return -1;
+	if (ptr[row*img.cols + col] < 20) {
+		ptr[row*img.cols + col] = 0;
+		return -1;
+	}
+	else{
 		ptr[row*img.cols + col] = 255;
+		int angle = tPtr[row*img.cols + col];
+		int retValue = -1;
+		switch (angle)
+		{
+		case 0:
+			retValue = hysteresisL(img, theta, row - 1, col);
+			break;
+		case 45:
+			retValue = hysteresisL(img, theta, row - 1, col - 1);
+			break;
+		case 90:
+			retValue = hysteresisL(img, theta, row, col - 1);
+			break;
+		case 135:
+			retValue = hysteresisL(img, theta, row - 1, col + 1);
+			break;
+		default:
+			break;
+		}
 		return 1;
 	}
 }
