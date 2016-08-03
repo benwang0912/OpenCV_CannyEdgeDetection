@@ -16,8 +16,11 @@ float GyKernel[3][3] = {
 	1,2,1,
 	0,0,0,
 	-1,-2,-1 };
+int upperThreshold = 60;
+int lowerThreshold = 20;
 
 void CallBackForDeriviation(int val, void *userData);
+void CallBackForThrehold(int val, void *userData);
 
 void toGrayScale(Mat& img);
 void GaussianBlur(Mat& img, float deriviation);
@@ -39,7 +42,7 @@ int main() {
 	namedWindow("Canny", WINDOW_AUTOSIZE);
 	int deriviation = 8408;
 	createTrackbar("Deriviation", "Canny", &deriviation, 10000, CallBackForDeriviation, NULL);
-
+	createTrackbar("UpperThreshold", "Canny", &upperThreshold, 255, CallBackForThrehold, &deriviation);
 	toGrayScale(source);
 	Mat img(source);
 	GaussianBlur(img, deriviation);
@@ -71,7 +74,22 @@ void CallBackForDeriviation(int val, void *userData) {
 
 	imshow("Canny", img);
 }
+void CallBackForThrehold(int val, void *userData) {
+	if (val < 3) {
+		val = 3;
+	}
+	upperThreshold = val;
+	lowerThreshold = val / 3;
 
+	int deriviation = *(int *)userData;
+	
+	Mat img(source);
+
+	GaussianBlur(img, deriviation);
+	Canny(img);
+
+	imshow("Canny", img);
+}
 void GaussianBlur(Mat& img, float deriviation) {
 
 	float sigma = ((float)deriviation / 10000.0);
@@ -214,7 +232,7 @@ void Canny(Mat &img) {
 	
 	for (int row = 0; row < img.rows; ++row) {
 		for (int col = 0; col < img.cols; ++col) {
-			if (gPtr[row*img.cols + col] >= 60) {
+			if (gPtr[row*img.cols + col] >= upperThreshold) {
 				hysteresisR(G, Theta, row, col);
 				hysteresisL(G, Theta, row, col);
 			}
@@ -222,7 +240,7 @@ void Canny(Mat &img) {
 	}
 	for (int row = 0; row < img.rows; ++row) {
 		for (int col = 0; col < img.cols; ++col) {
-			if (gPtr[row*img.cols + col] <= 60) {
+			if (gPtr[row*img.cols + col] <= upperThreshold) {
 				gPtr[row*img.cols + col] = 0;
 			}
 		}
@@ -235,7 +253,7 @@ int hysteresisR(Mat &img, Mat &theta, int row, int col) {
 	float *tPtr = (float *)theta.data;
 	if (!(row >= 0 && row < img.rows && col < img.cols && col >= 0))
 		return -1;
-	if (ptr[row*img.cols + col] < 20) {
+	if (ptr[row*img.cols + col] < lowerThreshold) {
 		ptr[row*img.cols + col] = 0;
 		return -1;
 	}
@@ -270,7 +288,7 @@ int hysteresisL(Mat &img, Mat &theta, int row, int col) {
 
 	if (!(row >= 0 && row < img.rows && col < img.cols && col >= 0))
 		return -1;
-	if (ptr[row*img.cols + col] < 20) {
+	if (ptr[row*img.cols + col] < lowerThreshold) {
 		ptr[row*img.cols + col] = 0;
 		return -1;
 	}
